@@ -4,13 +4,13 @@
 #  - All other $-starting strings will be assumed to be environment variables
 
 # Launcher configuration
+allow_no_checkout: true # if true, will warn if `--checkout` is not passed to `launch.py`, even if it defaults to the current branch
+allow_unclean_repo: false # if false, will not run if the repo is not clean (untracked files, uncommitted changes, etc.) and will ask for confirmation
+clone_as_https: true # if true, will clone the repo as https instead of ssh
 dry_run: false # if true, will not run the command, but will print the sbatch command
 force: false # if true, will run the command even if the repo is not clean
-prevent_unclean_repo: true # if true, will not run if the repo is not clean (untracked files, uncommitted changes, etc.)
 sbatch_files_root: $SCRATCH/mila-launch/$repoName/sbatch_files # where to store the sbatch files filled from the templates
 verbose: false # if true, will print the sbatch command
-warn_no_checkout: true # if true, will warn if `--checkout` is not passed to `launch.py`, even if it defaults to the current branch
-clone_as_https: true # if true, will clone the repo as https instead of ssh
 
 # Job configuration
 code_dir: "$SLURM_TMPDIR" # path to the directory to run the command from. Use `'$SLURM_TMPDIR'` to run from a unique temporary directory for each job

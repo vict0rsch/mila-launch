@@ -17,145 +17,6 @@ ROOT = Path(__file__).resolve().parent
 
 GIT_WARNING = True
 
-HELP = dedent(
-    """
-    ## 🥳 User guide
-
-    In a word, use `launch.py` to fill in an sbatch template and submit either
-    a single job from the command-line, or a list of jobs from a `yaml` file.
-
-    Examples:
-
-    ```bash
-    # using default job configuration, with script args from the command-line:
-    $ python launch.py user=$USER logger.do.online=False
-
-    # overriding the default job configuration and adding script args:
-    $ python launch.py --template=template-venv.sh \\
-        --venv='~/.venvs/gfn' \\
-        --modules='python/3.9 cuda/11.3' \\
-        user=$USER logger.do.online=False
-
-    # using a yaml file to specify multiple jobs to run:
-    $ python launch.py --jobs=ViT/v0" --mem=32G
-    ```
-
-    ### 🤓 How it works
-
-    1. All experiment files should be in `config/jobs`
-    2. You can nest experiment files infinitely, let's say you work on ViTs and call your experiment `vanilla.yaml`
-        then you could put your config in `config/jobs/ViT/vanilla.yaml`
-    3. An experiment file can contain 2 main sections:
-        1. `shared:` contains the configuration that will be, you guessed it, shared across jobs (optional).
-        2. `jobs:` lists configurations for the SLURM jobs that you want to run. The `shared` configuration will be loaded first, then updated from the `job`'s.
-    4. Both `shared` and `jobs` dicts contain (optional) sub-sections:
-        1. `slurm:` contains what's necessary to parameterize the SLURM job
-        2. `script:` contains a dict version of the command-line args to give `main.py`
-
-        ```yaml
-        script:
-          gflownet:
-            optimizer:
-              lr: 0.001
-
-        # is equivalent to
-        script:
-          gflownet.optimizer.lr: 0.001
-
-        # and will be translated to
-        python main.py gflownet.optimizer.lr=0.001
-        ```
-
-    5. Launch the SLURM jobs with `python launch.py --jobs=ViT/vanilla`
-        1. `launch.py` knows to look in `config/jobs/` and add `.yaml` (but you can write `.yaml` yourself)
-        2. You can overwrite anything from the command-line: the command-line arguments have the final say and will overwrite all the jobs' final dicts.
-            Run `python launch.py -h` to see all the known args.
-        3. You can also override `script` params from the command-line: unknown arguments will be given as-is to `main.py`.
-            For instance `python launch.py --jobs=ViT/vanilla --mem=32G model.some_param=value` is valid
-    6. `launch.py` loads a template (`config/templates/conda.sh`) by default, and fills it with the arguments specified,
-        then writes the filled template in the folder specified by `launch.conf.yaml:sbatch_files_root`
-        with the current datetime and experiment file name.
-    7. `launch.py` executes `sbatch` in a subprocess to execute the filled template above
-    8. A summary yaml is also created there, with the exact experiment file and appended `SLURM_JOB_ID`s returned by `sbatch`
-
-    ### 📝 Case-study
-
-    Let's study the following example:
-
-    ```text
-    $ python launch.py foo.bar=21 --jobs=example-jobs --cpus=1
-    🗂  Using jobs file: ./config/jobs/example-jobs.yaml
-
-    💥 Git warnings:
-    • `--git_checkout` not provided. Using current branch: main
-    • Your repo contains uncommitted changes. They will *not* be available when cloning happens within the job.
-    Continue anyway? [y/N] y
-
-    🚨 Submit 3 jobs? [y/N] y
-
-
-    ✅ Submitted batch job 4058483
-    🏷  Created /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_4058483_20240124_134208_0
-    📝 Job output file will be: /network/scratch/s/schmidtv/mila-launch/logs/slurm/mila-launch-4058483.out
-
-    ✅ Submitted batch job 4058484
-    🏷  Created /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_4058484_20240124_134208_1
-    📝 Job output file will be: /network/scratch/s/schmidtv/mila-launch/logs/slurm/mila-launch-4058484.out
-
-    ✅ Submitted batch job 4058485
-    🏷  Created /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_4058485_20240124_134208_2
-    📝 Job output file will be: /network/scratch/s/schmidtv/mila-launch/logs/slurm/mila-launch-4058485.out
-
-    🚀 Submitted job 3/3
-    Created summary YAML in /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_20240124_134208.yaml
-    All jobs submitted: 4058483 4058484 4058485
-    ```
-
-    Say the file `./external/jobs/crystals/explore-losses.yaml` contains:
-
-    ```yaml
-    # Contents of external/jobs/crystals/explore-losses.yaml
-
-    {yaml_example}
-    ```
-
-    Then the launch command-line ^ will execute 3 jobs with the following configurations:
-
-    ```bash
-    python main.py user=$USER +experiments=neurips23/crystal-comp-sg-lp.yaml gflownet=flowmatch gflownet.optimizer.lr=0.0001
-
-    python main.py user=$USER +experiments=neurips23/crystal-comp-sg-lp.yaml gflownet=flowmatch gflownet.optimizer.lr=0.0001 gflownet.policy.backward=None
-
-    python main.py user=$USER +experiments=neurips23/crystal-comp-sg-lp.yaml gflownet=trajectorybalance gflownet.optimizer.lr=0.0001
-    ```
-
-    And their SLURM configuration will be similar as the `shared.slurm` params, with the following differences:
-
-    1. The second job will have `partition: unkillable` instead of the default (`long`).
-    2. They will all have `64G` of memory instead of the default (`32G`) because the `--mem=64G` command-line
-        argument overrides everything.
-
-    ## Updating the launcher
-
-    When updating the launcher, you should:
-
-    1. Update this markdown text **in launch.py:HELP** (do not edit this `LAUNCH.md`)
-    2. Run `$ python mila/launch.py --help-md > LAUNCH.md` to update this `LAUNCH.md` from the new `launch.py:HELP` text, new flags etc.
-    """.format(
-        yaml_example="\n".join(
-            [
-                # need to indend those lines because of dedent()
-                "    " + l if i else l  # first line is already indented
-                for i, l in enumerate(
-                    (ROOT / "config/jobs/example-jobs.yaml")
-                    .read_text()
-                    .splitlines()[6:]  # ignore first lines which are just comments
-                )
-            ]
-        )
-    )
-)
-
 
 def resolve_env_vars(string):
     """
@@ -380,7 +241,17 @@ def deep_update(a, b, path=None, verbose=None):
 
 
 def print_md_help(parser, defaults):
-    global HELP
+    help = (ROOT / "config" / "templates" / "help.md").read_text()
+    example_file = ROOT / "config/jobs/example-jobs.yaml"
+
+    yaml_example = f"😅 {example_file} not found"
+    if example_file.is_file():
+        yaml_example = example_file.read_text()
+        lines = yaml_example.splitlines()
+        idx = [i for i, l in enumerate(lines) if l.startswith("shared:")][0]
+        yaml_example = "\n".join(lines[idx:])
+
+    help = help.format(yaml_example=yaml_example)
 
     print("# 🤝 Mila Launch tool help\n")
     print("## 💻 Command-line help\n")
@@ -394,7 +265,7 @@ def print_md_help(parser, defaults):
         + "\n".join([f"{k}: {v}" for k, v in dict_to_print(defaults).items()])
         + "\n```"
     )
-    print(HELP, end="")
+    print(help, end="")
 
 
 def ssh_to_https(url):
@@ -470,7 +341,7 @@ def validate_git_status(conf):
                 + f" Using current branch: {git_checkout}"
             )
     # warn for uncommitted changes
-    if repo.is_dirty() and GIT_WARNING:
+    if repo.is_dirty() and GIT_WARNING and not conf["allow_unclean_repo"]:
         if not get_user_input:
             print("💥 Git warnings:")
         get_user_input = True
@@ -568,7 +439,7 @@ def load_launch_conf():
     with open(launch_conf_path, "r") as f:
         launch_conf = safe_load(f)
 
-    GIT_WARNING = launch_conf.get("warn_no_checkout", True)
+    GIT_WARNING = not launch_conf.get("allow_no_checkout", True)
 
     return launch_conf
 
@@ -716,18 +587,18 @@ def parse_args_to_dict():
         + f" Defaults to {launch_defaults['sbatch_files_root']}",
     )
     parser.add_argument(
-        "--prevent_unclean_repo",
+        "--allow_unclean_repo",
         action="store_true",
         default=None,
         help="Raise an error if the git repo is not clean."
-        + f" Defaults to {launch_defaults['prevent_unclean_repo']}",
+        + f" Defaults to {launch_defaults['allow_unclean_repo']}",
     )
     parser.add_argument(
-        "--warn_no_checkout",
+        "--allow_no_checkout",
         action="store_true",
         default=None,
         help="Warn if no git checkout is provided."
-        + f" Defaults to {launch_defaults['warn_no_checkout']}",
+        + f" Defaults to {launch_defaults['allow_no_checkout']}",
     )
     parser.add_argument(
         "--clone_as_https",
