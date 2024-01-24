@@ -4,7 +4,7 @@
 #  - All other $-starting strings will be assumed to be environment variables
 
 # Launcher configuration
-dry-run: false # if true, will not run the command, but will print the sbatch command
+dry_run: false # if true, will not run the command, but will print the sbatch command
 force: false # if true, will run the command even if the repo is not clean
 prevent_unclean_repo: true # if true, will not run if the repo is not clean (untracked files, uncommitted changes, etc.)
 sbatch_files_root: $SCRATCH/mila-launch/$repoName/sbatch_files # where to store the sbatch files filled from the templates
