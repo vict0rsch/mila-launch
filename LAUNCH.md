@@ -96,7 +96,7 @@ time               : ""
 venv               : ""
 verbose            : False
 ```
-## 🥳 User guide
+# 🥳 User guide
 
 In a word, use `launch.py` to fill in an sbatch template and submit either
 a single job from the command-line, or a list of jobs from a `yaml` file.
@@ -123,7 +123,7 @@ In general:
 
 Read the known args in `config/templates/launch.conf.yaml`
 
-### 🤓 How job files work
+## 🤓 How job files work
 
 1. All job configuration files should be in `config/jobs/`
 2. You can nest experiment files infinitely, let's say you work on ViTs and call your experiment `vanilla.yaml` then you could put your config in `config/jobs/ViT/vanilla.yaml`
@@ -180,7 +180,7 @@ By default, the following actions and checks are performed:
 You can disable all of these checks with `--allow_unclean_repo` and `--allow_no_checkout`
 or by changing the defaults in `config/templates/launch.conf.yaml`.
 
-### 📝 Case-study
+## 📝 Case-study
 
 Let's study the following example:
 
