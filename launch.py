@@ -9,6 +9,7 @@ from pathlib import Path
 from textwrap import dedent
 
 from git import Repo
+from git.exc import GitCommandError
 from yaml import safe_load
 
 ROOT = Path(__file__).resolve().parent
@@ -401,6 +402,98 @@ def ssh_to_https(url):
     raise ValueError(f"Could not convert {url} to https")
 
 
+def get_remotes_diff(repo, git_checkout):
+    """
+    Returns the number of commits behind and ahead of each remote for the given
+    git checkout.
+
+    Args:
+        repo (git.Repo): git repo
+        git_checkout (str): git checkout (branch or commit)
+
+    Returns:
+        dict, dict: behinds, aheads (as {"remote_name": int})
+    """
+    behinds = {}
+    aheads = {}
+    for r in repo.remotes:
+        try:
+            behinds[r.name] = len(
+                list(repo.iter_commits(f"{git_checkout}..{r.name}/{git_checkout}"))
+            )
+        except GitCommandError as e:
+            if "fatal: bad revision" in str(e):
+                behinds[r.name] = f"checkout {git_checkout} found on remote {r.name}"
+        try:
+            aheads[r.name] = len(
+                list(repo.iter_commits(f"{r.name}/{git_checkout}..{git_checkout}"))
+            )
+        except GitCommandError:
+            # already caught and printed in commits behind
+            pass
+
+    return behinds, aheads
+
+
+def validate_git_status(conf):
+    """
+    Validates the git status of the current repo.
+
+    Args:
+        conf (dict): Launch configuration
+
+    Returns:
+        Repo, str: git repo and git checkout
+    """
+    global GIT_WARNING
+    get_user_input = False
+
+    git_checkout = conf["git_checkout"]
+
+    repo = Repo(ROOT)
+    if not git_checkout:
+        get_user_input = True
+        git_checkout = repo.active_branch.name
+        if GIT_WARNING:
+            if not get_user_input:
+                print("💥 Git warnings:")
+            print(
+                f"  • `--git_checkout` not provided. Using current branch: {git_checkout}"
+            )
+    # warn for uncommitted changes
+    if repo.is_dirty() and GIT_WARNING:
+        if not get_user_input:
+            print("💥 Git warnings:")
+        get_user_input = True
+        print(
+            "  • Your repo contains uncommitted changes. "
+            + "They will *not* be available when cloning happens within the job."
+        )
+    behinds, aheads = get_remotes_diff(repo, git_checkout)
+    if (any(behinds.values()) or any(aheads.values())) and GIT_WARNING:
+        if not get_user_input:
+            print("💥 Git warnings:")
+        get_user_input = True
+        for remote, b in behinds.items():
+            if b:
+                print(f"  • You are {b} commits behind {remote}/{git_checkout}")
+        for remote, a in aheads.items():
+            if a:
+                print(f"  • You are {a} commits ahead of {remote}/{git_checkout}")
+
+    if (
+        GIT_WARNING
+        and get_user_input
+        and "y" not in input("Continue anyway? [y/N] ").lower()
+    ):
+        print("🛑 Aborted")
+        sys.exit(0)
+
+    GIT_WARNING = False  # only warn once per launch.py run (there may be multiple jobs)
+
+    return repo, git_checkout
+
+
 def code_dir_for_slurm_tmp_dir_checkout(conf):
     """
     Makes sure the code_dir is set to $SLURM_TMPDIR and that the git checkout
@@ -422,32 +515,12 @@ def code_dir_for_slurm_tmp_dir_checkout(conf):
     Returns:
         str: multi-line formatted string
     """
-    global GIT_WARNING
 
-    git_checkout = conf["git_checkout"]
-
-    repo = Repo(ROOT)
-    if not git_checkout:
-        git_checkout = repo.active_branch.name
-        if GIT_WARNING:
-            print("💥 Git warnings:")
-            print(
-                f"  • `--git_checkout` not provided. Using current branch: {git_checkout}"
-            )
-        # warn for uncommitted changes
-        if repo.is_dirty() and GIT_WARNING:
-            print(
-                "  • Your repo contains uncommitted changes. "
-                + "They will *not* be available when cloning happens within the job."
-            )
-        if GIT_WARNING and "y" not in input("Continue anyway? [y/N] ").lower():
-            print("🛑 Aborted")
-            sys.exit(0)
-        GIT_WARNING = False
-
+    repo, git_checkout = validate_git_status(conf)
+    repo_url = repo.remotes.origin.url
     if conf["clone_as_https"]:
         repo_url = ssh_to_https(repo.remotes.origin.url)
-    repo_name = repo_url.split("/")[-1].split(".git")[0]
+    repo_name = repo.remotes.origin.url.split(".git")[0].split("/")[-1]
 
     return dedent(
         """\
