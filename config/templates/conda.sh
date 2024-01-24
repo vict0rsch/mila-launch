@@ -12,4 +12,4 @@ conda activate {conda_env}
 
 cd {code_dir}
 
-{command} {script} {script_args}
+{command} {script_path} {script_args}
