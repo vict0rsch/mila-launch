@@ -1,6 +1,6 @@
 # mila-launch
 
-Utility to launch SLURM jobs on Mila's cluster. It's not a package, it's not maintained, it's just some inspiration for you. Make PRs if you want but I won't fix bugs.
+Utility to launch SLURM jobs on Mila's cluster. It's not a package, it's not maintained, it's just some inspiration for you. Make PRs if you want but I won't actively fix bugs.
 
 Should still mostly work 🙃
 
