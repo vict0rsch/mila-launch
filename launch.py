@@ -1,4 +1,5 @@
 import datetime
+import os
 import re
 import sys
 from argparse import ArgumentParser
@@ -6,7 +7,7 @@ from copy import deepcopy
 from os import popen
 from os.path import expandvars
 from pathlib import Path
-from textwrap import dedent
+from textwrap import dedent, indent
 
 from git import Repo
 from git.exc import GitCommandError
@@ -82,25 +83,32 @@ HELP = dedent(
     Let's study the following example:
 
     ```text
-    $ python launch.py --jobs=ViT/vanilla --mem=64G
+    $ python launch.py foo.bar=21 --jobs=example-jobs --cpus=1
+    🗂  Using jobs file: ./config/jobs/example-jobs.yaml
 
-    🗂 Using run file: ./external/jobs/crystals/explore-losses.yaml
+    💥 Git warnings:
+    • `--git_checkout` not provided. Using current branch: main
+    • Your repo contains uncommitted changes. They will *not* be available when cloning happens within the job.
+    Continue anyway? [y/N] y
 
     🚨 Submit 3 jobs? [y/N] y
 
-      🏷  Created ./external/launched_sbatch_scripts/example_20230613_194430_0.sbatch
-      ✅  Submitted batch job 3301572
 
-      🏷  Created ./external/launched_sbatch_scripts/example_20230613_194430_1.sbatch
-      ✅  Submitted batch job 3301573
+    ✅ Submitted batch job 4058483
+    🏷  Created /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_4058483_20240124_134208_0
+    📝 Job output file will be: /network/scratch/s/schmidtv/mila-launch/logs/slurm/mila-launch-4058483.out
 
-      🏷  Created ./external/launched_sbatch_scripts/example_20230613_194430_2.sbatch
-      ✅  Submitted batch job 3301574
+    ✅ Submitted batch job 4058484
+    🏷  Created /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_4058484_20240124_134208_1
+    📝 Job output file will be: /network/scratch/s/schmidtv/mila-launch/logs/slurm/mila-launch-4058484.out
 
+    ✅ Submitted batch job 4058485
+    🏷  Created /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_4058485_20240124_134208_2
+    📝 Job output file will be: /network/scratch/s/schmidtv/mila-launch/logs/slurm/mila-launch-4058485.out
 
     🚀 Submitted job 3/3
-    Created summary YAML in ./external/launched_sbatch_scripts/example_20230613_194430.yaml
-    All jobs submitted: 3301572 3301573 3301574
+    Created summary YAML in /network/scratch/s/schmidtv/mila-launch/mila-launch/sbatch_files/example-jobs_20240124_134208.yaml
+    All jobs submitted: 4058483 4058484 4058485
     ```
 
     Say the file `./external/jobs/crystals/explore-losses.yaml` contains:
@@ -288,7 +296,7 @@ def find_jobs_conf(conf):
         local_out_dir = local_out_dir / jobs_conf_path.parent.relative_to(
             ROOT / "config" / "jobs"
         )
-    print("🗂  Using jobs file: ./" + str(jobs_conf_path.relative_to(Path.cwd())))
+    print("🗂  Using jobs file: " + relative_to_cwd(jobs_conf_path, as_str=True))
     print()
     return jobs_conf_path, local_out_dir
 
@@ -452,13 +460,14 @@ def validate_git_status(conf):
 
     repo = Repo(ROOT)
     if not git_checkout:
-        get_user_input = True
         git_checkout = repo.active_branch.name
         if GIT_WARNING:
             if not get_user_input:
                 print("💥 Git warnings:")
+            get_user_input = True
             print(
-                f"  • `--git_checkout` not provided. Using current branch: {git_checkout}"
+                "  • `--git_checkout` not provided."
+                + f" Using current branch: {git_checkout}"
             )
     # warn for uncommitted changes
     if repo.is_dirty() and GIT_WARNING:
@@ -489,6 +498,9 @@ def validate_git_status(conf):
         print("🛑 Aborted")
         sys.exit(0)
 
+    if get_user_input:
+        print()
+
     GIT_WARNING = False  # only warn once per launch.py run (there may be multiple jobs)
 
     return repo, git_checkout
@@ -516,7 +528,12 @@ def code_dir_for_slurm_tmp_dir_checkout(conf):
         str: multi-line formatted string
     """
 
-    repo, git_checkout = validate_git_status(conf)
+    repo = Repo(ROOT)
+    git_checkout = conf["git_checkout"] or repo.active_branch.name
+
+    if "SLURM_TMPDIR" not in job_conf["code_dir"]:
+        return str(resolve(job_conf["code_dir"]))
+
     repo_url = repo.remotes.origin.url
     if conf["clone_as_https"]:
         repo_url = ssh_to_https(repo.remotes.origin.url)
@@ -660,10 +677,10 @@ def parse_args_to_dict():
         + f" Defaults to {launch_defaults['jobs']}",
     )
     parser.add_argument(
-        "--dry-run",
+        "--dry_run",
         action="store_true",
         help="Don't run just, show what it would have run."
-        + f" Defaults to {launch_defaults['dry-run']}",
+        + f" Defaults to {launch_defaults['dry_run']}",
         default=None,
     )
     parser.add_argument(
@@ -804,6 +821,36 @@ def clean_sbatch_params(templated):
     return "\n".join(new_lines)
 
 
+def relative_to_cwd(p, as_str=False):
+    """
+    Get the relative path of p to the current working directory (cwd) if possible.
+
+    If p is not in cwd, return p as is.
+
+    Args:
+        p (Path): path to get relative to cwd
+
+    Returns:
+        Path: relative path to cwd if possible, else p as is
+    """
+    rel = resolve(p)
+    try:
+        rel = rel.relative_to(Path.cwd())
+        if as_str:
+            rel = f"./{str(rel)}"
+    except ValueError:
+        if as_str:
+            rel = str(rel)
+    if as_str:
+        rel = (
+            rel.replace(str(ROOT), "$root")
+            .replace(str(os.environ["HOME"]), "~")
+            .replace(os.environ["SCRATCH"], "$SCRATCH")
+        )
+
+    return rel
+
+
 if __name__ == "__main__":
     launch_defaults = load_launch_conf()
 
@@ -817,9 +864,10 @@ if __name__ == "__main__":
         sys.exit(0)
 
     conf = deep_update(launch_defaults, args)
-    print("🥁 Current Launch Configuration:")
-    print("\n".join([f"  • {k}: {v}" for k, v in dict_to_print(conf).items()]))
-    print()
+    if conf["verbose"]:
+        print("🥁 Current Launch Configuration:")
+        print("\n".join([f"  • {k}: {v}" for k, v in dict_to_print(conf).items()]))
+        print()
 
     # load sbatch template file to format
     template = load_template(conf)
@@ -854,6 +902,14 @@ if __name__ == "__main__":
     now = now_str()
 
     if not force and not dry_run:
+        validate_git_status(conf)
+
+        if conf["verbose"]:
+            print("Candidate job configs:")
+            print("======================\n")
+            for i, job_dict in enumerate(job_dicts):
+                print(f"  • {i}: {job_dict}")
+                print()
         if "y" not in input(f"🚨 Submit {len(job_dicts)} jobs? [y/N] ").lower():
             print("🛑 Aborted")
             sys.exit(0)
@@ -865,11 +921,7 @@ if __name__ == "__main__":
         job_conf = deep_update(job_conf, job_dict)
         job_conf = deep_update(job_conf, args)  # cli has the final say
 
-        job_conf["code_dir"] = (
-            str(resolve(job_conf["code_dir"]))
-            if "SLURM_TMPDIR" not in job_conf["code_dir"]
-            else code_dir_for_slurm_tmp_dir_checkout(job_conf)
-        )
+        job_conf["code_dir"] = code_dir_for_slurm_tmp_dir_checkout(job_conf)
         job_conf["outdir"] = str(resolve(job_conf["outdir"]))
         job_conf["venv"] = str(resolve(job_conf["venv"]))
         job_conf["script_args"] = script_dict_to_script_args_str(
@@ -915,15 +967,16 @@ if __name__ == "__main__":
             print("  ✅ " + out)
             # Rename sbatch file with job id
             parts = sbatch_path.stem.split(f"_{now}")
-            new_name = f"{parts[0]}_{job_id}_{now}"
-            if len(parts) > 1:
-                new_name += f"_{parts[1]}"
+            new_name = f"{parts[0]}_{job_id}_{now}.sbatch"
             sbatch_path = sbatch_path.rename(sbatch_path.parent / new_name)
-            print(f"  🏷  Created ./{sbatch_path.relative_to(Path.cwd())}")
+            print(f"  🏷  Created {relative_to_cwd(sbatch_path, as_str=True)}")
             # Write job ID & output file path in the sbatch file
             job_output_file = str(outdir / f"{job_conf['job_name']}-{job_id}.out")
             job_out_files.append(job_output_file)
-            print("  📝  Job output file will be: " + job_output_file)
+            print(
+                "  📝 Job output file will be: "
+                + relative_to_cwd(job_output_file, as_str=True)
+            )
             templated += (
                 "\n# SLURM_JOB_ID: "
                 + job_id
@@ -937,9 +990,10 @@ if __name__ == "__main__":
         if dry_run or conf.get("verbose"):
             if dry_run:
                 print("\nDRY RUN: would have writen in sbatch file:", str(sbatch_path))
-            print("#" * 40 + " <sbatch> " + "#" * 40)
-            print(templated)
-            print("#" * 40 + " </sbatch> " + "#" * 39)
+            sbatch_to_print = "#" * 40 + " <sbatch> " + "#" * 40 + "\n"
+            sbatch_to_print += templated
+            sbatch_to_print += "\n" + "#" * 40 + " </sbatch> " + "#" * 39
+            print(indent(sbatch_to_print, " " * 5))
             print()
 
     # Recap submitted jobs. Useful for scancel for instance.
@@ -953,13 +1007,14 @@ if __name__ == "__main__":
         conf = jobs_conf_path.read_text()
         new_conf_path = local_out_dir / f"{jobs_conf_path.stem}_{now}.yaml"
         new_conf_path.parent.mkdir(parents=True, exist_ok=True)
+        conf += f"\n# Command run: {' '.join(sys.argv)}\n"
         conf += "\n# " + jobs_str + "\n"
         conf += (
             "\n# Job Output files:\n#"
             + "\n#".join([f"  • {f}" for f in job_out_files])
             + "\n"
         )
-        rel = new_conf_path.relative_to(Path.cwd())
+        rel = relative_to_cwd(new_conf_path)
         if not dry_run:
             new_conf_path.write_text(conf)
             print(f"   Created summary YAML in {rel}")
