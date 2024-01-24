@@ -148,7 +148,7 @@ HELP = dedent(
 )
 
 
-def resolve_env_vars(str):
+def resolve_env_vars(string):
     """
     Resolves environment variables in a string.
 
@@ -157,12 +157,12 @@ def resolve_env_vars(str):
     - $repoName: resolves to the name of the current repository
 
     Args:
-        str (str): The string to resolve
+        string (str): The string to resolve
 
     Returns:
         str: resolved string
     """
-    candidate = str.replace("$root", str(ROOT)).replace("$repoName", ROOT.name)
+    candidate = string.replace("$root", str(ROOT)).replace("$repoName", ROOT.name)
     if "$" in candidate:
         candidate = expandvars(candidate)
     return candidate
@@ -251,35 +251,35 @@ def load_jobs(yaml_path):
     return jobs
 
 
-def find_jobs_conf(args, launch_conf):
+def find_jobs_conf(conf):
     """
     TODO: docstring
     """
-    local_out_dir = resolve(resolve_env_vars(launch_conf["sbatch_files_root"]))
-    if not args.get("jobs"):
+    local_out_dir = resolve(resolve_env_vars(conf["sbatch_files_root"]))
+    if not conf.get("jobs"):
         return None, local_out_dir / "_other_"
 
-    if resolve(args["jobs"]).is_file():
-        assert args["jobs"].endswith(".yaml") or args["jobs"].endswith(
+    if resolve(conf["jobs"]).is_file():
+        assert conf["jobs"].endswith(".yaml") or conf["jobs"].endswith(
             ".yml"
         ), "jobs file must be a yaml file"
-        jobs_conf_path = resolve(args["jobs"])
+        jobs_conf_path = resolve(conf["jobs"])
         local_out_dir = local_out_dir / jobs_conf_path.parent.name
     else:
-        if args["jobs"].endswith(".yaml"):
-            args["jobs"] = args["jobs"][:-5]
-        if args["jobs"].endswith(".yml"):
-            args["jobs"] = args["jobs"][:-4]
-        if args["jobs"].startswith("external/"):
-            args["jobs"] = args["jobs"][9:]
-        if args["jobs"].startswith("jobs/"):
-            args["jobs"] = args["jobs"][5:]
+        if conf["jobs"].endswith(".yaml"):
+            conf["jobs"] = conf["jobs"][:-5]
+        if conf["jobs"].endswith(".yml"):
+            conf["jobs"] = conf["jobs"][:-4]
+        if conf["jobs"].startswith("external/"):
+            conf["jobs"] = conf["jobs"][9:]
+        if conf["jobs"].startswith("jobs/"):
+            conf["jobs"] = conf["jobs"][5:]
         yamls = [
-            str(y) for y in (ROOT / "config" / "jobs").glob(f"{args['jobs']}.y*ml")
+            str(y) for y in (ROOT / "config" / "jobs").glob(f"{conf['jobs']}.y*ml")
         ]
         if len(yamls) == 0:
             raise ValueError(
-                f"Could not find {args['jobs']}.y(a)ml in ./external/jobs/"
+                f"Could not find {conf['jobs']}.y(a)ml in ./external/jobs/"
             )
         if len(yamls) > 1:
             print(">>> Warning: found multiple matches:\n  •" + "\n  •".join(yamls))
@@ -380,11 +380,9 @@ def print_md_help(parser, defaults):
     print(parser.format_help())
     print("```\n")
     print("## 🎛️ Default values\n")
-    ml = max(len(d) for d in defaults) + 1
-    print_dict = {k: str(v) if v != "" else '""' for k, v in defaults.items()}
     print(
         "```yaml\n"
-        + "\n".join([f"{k:{ml}}: {v}" for k, v in print_dict.items()])
+        + "\n".join([f"{k}: {v}" for k, v in dict_to_print(defaults).items()])
         + "\n```"
     )
     print(HELP, end="")
@@ -403,7 +401,7 @@ def ssh_to_https(url):
     raise ValueError(f"Could not convert {url} to https")
 
 
-def code_dir_for_slurm_tmp_dir_checkout(git_checkout, args):
+def code_dir_for_slurm_tmp_dir_checkout(conf):
     """
     Makes sure the code_dir is set to $SLURM_TMPDIR and that the git checkout
     is done there.
@@ -419,21 +417,22 @@ def code_dir_for_slurm_tmp_dir_checkout(git_checkout, args):
     ```
 
     Args:
-        git_checkout (str): branch or commit to checkout
-        args (dict): command-line arguments
+        conf (dict): Launch configuration
 
     Returns:
         str: multi-line formatted string
     """
     global GIT_WARNING
 
+    git_checkout = conf["git_checkout"]
+
     repo = Repo(ROOT)
-    if git_checkout is None:
+    if not git_checkout:
         git_checkout = repo.active_branch.name
         if GIT_WARNING:
             print("💥 Git warnings:")
             print(
-                f"  • `--checkout` not provided. Using current branch: {git_checkout}"
+                f"  • `--git_checkout` not provided. Using current branch: {git_checkout}"
             )
         # warn for uncommitted changes
         if repo.is_dirty() and GIT_WARNING:
@@ -446,7 +445,7 @@ def code_dir_for_slurm_tmp_dir_checkout(git_checkout, args):
             sys.exit(0)
         GIT_WARNING = False
 
-    if args["clone_as_https"]:
+    if conf["clone_as_https"]:
         repo_url = ssh_to_https(repo.remotes.origin.url)
     repo_name = repo_url.split("/")[-1].split(".git")[0]
 
@@ -490,13 +489,18 @@ def parse_args_to_dict():
     """
     parser = ArgumentParser(add_help=False)
     parser.add_argument(
-        "-h", "--help", action="store_true", help="show this help message and exit"
+        "-h",
+        "--help",
+        action="store_true",
+        help="show this help message and exit",
+        default=None,
     )
     parser.add_argument(
         "--help-md",
         action="store_true",
         help="Show an extended help message as markdown. Can be useful to overwrite "
         + "LAUNCH.md with `$ python mila/launch.py --help-md > LAUNCH.md`",
+        default=None,
     )
     parser.add_argument(
         "--job_name",
@@ -587,17 +591,20 @@ def parse_args_to_dict():
         action="store_true",
         help="Don't run just, show what it would have run."
         + f" Defaults to {launch_defaults['dry-run']}",
+        default=None,
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
         help="print templated sbatch after running it."
         + f" Defaults to {launch_defaults['verbose']}",
+        default=None,
     )
     parser.add_argument(
         "--force",
         action="store_true",
         help="Skip user confirmation." + f" Defaults to {launch_defaults['force']}",
+        default=None,
     )
     parser.add_argument(
         "--command",
@@ -606,9 +613,10 @@ def parse_args_to_dict():
     )
 
     parser.add_argument(
-        "--script",
+        "--script_path",
         type=str,
-        help="Script to run by command." + f" Defaults to {launch_defaults['script']}",
+        help="Script to run by command."
+        + f" Defaults to {launch_defaults['script_path']}",
     )
 
     parser.add_argument(
@@ -620,18 +628,21 @@ def parse_args_to_dict():
     parser.add_argument(
         "--prevent_unclean_repo",
         action="store_true",
+        default=None,
         help="Raise an error if the git repo is not clean."
         + f" Defaults to {launch_defaults['prevent_unclean_repo']}",
     )
     parser.add_argument(
         "--warn_no_checkout",
         action="store_true",
+        default=None,
         help="Warn if no git checkout is provided."
         + f" Defaults to {launch_defaults['warn_no_checkout']}",
     )
     parser.add_argument(
         "--clone_as_https",
         action="store_true",
+        default=None,
         help="Clone the repo as https instead of ssh."
         + f" Defaults to {launch_defaults['clone_as_https']}",
     )
@@ -643,6 +654,81 @@ def parse_args_to_dict():
     args = {k: v for k, v in vars(known).items() if v is not None}
 
     return args, cli_script_args, parser
+
+
+def find_template(conf):
+    """
+    Finds the template file by considering it either a path to a file, or a file
+    name in `config/templates/`.
+
+    Args:
+        conf (dict): Launch configuration
+
+    Returns:
+        Path: path to the template file
+    """
+    template_path = resolve(conf["template"])
+    if not template_path.is_file():
+        template_alternative = ROOT / "config" / "templates" / template_path.name
+        if template_alternative.is_file():
+            return template_alternative
+        raise ValueError(
+            f"Could not find template file at {template_path} or {template_alternative}"
+        )
+    return template_path
+
+
+def dict_to_print(d):
+    """
+    Returns a dict with all the values as strings, and all the keys padded to
+    the same length.
+
+    Args:
+        d (dict): dict to print
+
+    Returns:
+        dict: formatted dict
+    """
+    ml = max(len(k) for k in d) + 1
+    keys = sorted(d.keys())
+    return {f"{k:{ml}}": str(d[k]) if d[k] != "" else '""' for k in keys}
+
+
+def load_template(conf):
+    """
+    Loads the template file.
+
+    Args:
+        conf (dict): Launch configuration
+
+    Returns:
+        dict: template as a string
+    """
+    template_path = find_template(conf)
+    return template_path.read_text()
+
+
+def clean_sbatch_params(templated):
+    """
+    Removes all SBATCH params that have an empty value.
+
+    Args:
+        templated (str): templated sbatch file
+
+    Returns:
+        str: cleaned sbatch file
+    """
+    new_lines = []
+    for line in templated.splitlines():
+        if not line.startswith("#SBATCH"):
+            new_lines.append(line)
+            continue
+        if "=" not in line:
+            new_lines.append(line)
+            continue
+        if line.split("=")[1].strip():
+            new_lines.append(line)
+    return "\n".join(new_lines)
 
 
 if __name__ == "__main__":
@@ -657,24 +743,29 @@ if __name__ == "__main__":
         print(parser.format_help())
         sys.exit(0)
 
+    conf = deep_update(launch_defaults, args)
+    print("🥁 Current Launch Configuration:")
+    print("\n".join([f"  • {k}: {v}" for k, v in dict_to_print(conf).items()]))
+    print()
+
     # load sbatch template file to format
-    template = resolve(args.get("template", launch_defaults["template"])).read_text()
+    template = load_template(conf)
     # find the required formatting keys
-    template_keys = set(re.findall(r"{(\w+)}", template))
+    template_known_keys = set(re.findall(r"{(\w+)}", template))
 
     # in dry run mode: no mkdir, no sbatch etc.
-    dry_run = args.get("dry_run")
+    dry_run = conf["dry_run"]
 
     # in force mode, no confirmation is asked
-    force = args.get("force", launch_defaults["force"])
+    force = conf["force"]
 
     # where to write the slurm output file
-    outdir = resolve(args.get("outdir", launch_defaults["outdir"]))
+    outdir = resolve(conf["outdir"])
     if not dry_run:
         outdir.mkdir(parents=True, exist_ok=True)
 
     # find jobs config file in external/jobs as a yaml file
-    jobs_conf_path, local_out_dir = find_jobs_conf(args)
+    jobs_conf_path, local_out_dir = find_jobs_conf(conf)
     # load yaml file as list of dicts. May be empty if jobs_conf_path is None
     job_dicts = load_jobs(jobs_conf_path)
     # No run passed in the CLI args or in the associated yaml file so run the
@@ -696,43 +787,46 @@ if __name__ == "__main__":
         print()
 
     for i, job_dict in enumerate(job_dicts):
-        job_args = launch_defaults.copy()
-        job_args = deep_update(job_args, job_dict.pop("slurm", {}))
-        job_args = deep_update(job_args, job_dict)
-        job_args = deep_update(job_args, args)
+        job_conf = conf.copy()
+        job_conf = deep_update(job_conf, job_dict.pop("slurm", {}))
+        job_conf = deep_update(job_conf, job_dict)
+        job_conf = deep_update(job_conf, args)  # cli has the final say
 
-        job_args["code_dir"] = (
-            str(resolve(job_args["code_dir"]))
-            if "SLURM_TMPDIR" not in job_args["code_dir"]
-            else code_dir_for_slurm_tmp_dir_checkout(job_args.get("git_checkout"), args)
+        job_conf["code_dir"] = (
+            str(resolve(job_conf["code_dir"]))
+            if "SLURM_TMPDIR" not in job_conf["code_dir"]
+            else code_dir_for_slurm_tmp_dir_checkout(job_conf)
         )
-        job_args["outdir"] = str(resolve(job_args["outdir"]))
-        job_args["venv"] = str(resolve(job_args["venv"]))
-        job_args["script_args"] = script_dict_to_script_args_str(
-            job_args.get("script", {})
+        job_conf["outdir"] = str(resolve(job_conf["outdir"]))
+        job_conf["venv"] = str(resolve(job_conf["venv"]))
+        job_conf["script_args"] = script_dict_to_script_args_str(
+            job_conf.get("script", {})
         )
-        if job_args["script_args"] and cli_script_args:
-            job_args["script_args"] += " "
-        job_args["script_args"] += cli_script_args
+        if job_conf["script_args"] and cli_script_args:
+            job_conf["script_args"] += " "
+        job_conf["script_args"] += cli_script_args
 
         # filter out useless args for the template
-        job_args = {k: str(v) for k, v in job_args.items() if k in template_keys}
+        template_values = {
+            k: str(v) for k, v in job_conf.items() if k in template_known_keys
+        }
         # Make sure all the keys in the template are in the args
-        if set(template_keys) != set(job_args.keys()):
-            print(f"template keys: {template_keys}")
-            print(f"template args: {job_args}")
+        if set(template_known_keys) != set(template_values.keys()):
+            print(f"template keys: {template_known_keys}")
+            print(f"template values: {template_values}")
             raise ValueError(
                 "template keys != template args (see details printed above)"
             )
 
         # format template for this run
-        templated = template.format(**job_args)
+        templated = template.format(**template_values)
+        templated = clean_sbatch_params(templated)  # remove empty #SBATCH params
 
         # set output path for the sbatch file to execute in order to submit the job
         if jobs_conf_path is not None:
             sbatch_path = local_out_dir / f"{jobs_conf_path.stem}_{now}_{i}.sbatch"
         else:
-            sbatch_path = local_out_dir / f"{job_args['job_name']}_{now}.sbatch"
+            sbatch_path = local_out_dir / f"{job_conf['job_name']}_{now}.sbatch"
 
         if not dry_run:
             # make sure the sbatch file parent directory exists
@@ -754,7 +848,7 @@ if __name__ == "__main__":
             sbatch_path = sbatch_path.rename(sbatch_path.parent / new_name)
             print(f"  🏷  Created ./{sbatch_path.relative_to(Path.cwd())}")
             # Write job ID & output file path in the sbatch file
-            job_output_file = str(outdir / f"{job_args['job_name']}-{job_id}.out")
+            job_output_file = str(outdir / f"{job_conf['job_name']}-{job_id}.out")
             job_out_files.append(job_output_file)
             print("  📝  Job output file will be: " + job_output_file)
             templated += (
@@ -767,7 +861,7 @@ if __name__ == "__main__":
             sbatch_path.write_text(templated)
 
         # final prints for dry_run & verbose mode
-        if dry_run or args.get("verbose"):
+        if dry_run or conf.get("verbose"):
             if dry_run:
                 print("\nDRY RUN: would have writen in sbatch file:", str(sbatch_path))
             print("#" * 40 + " <sbatch> " + "#" * 40)
