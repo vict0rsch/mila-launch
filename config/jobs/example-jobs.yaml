@@ -1,8 +1,9 @@
 # Example yaml configuration to run SLURM jobs with `launch.py`
 # This file is the one used in the LAUNCH.md tutorial
 
-# In practice, this file should be in `external/jobs` and can be arbitrarily nested,
-# for instance `external/jobs/crystals/explore-losses.yaml
+# In practice, this file should be in `config/jobs` and can be arbitrarily nested,
+# for instance `config/jobs/task/clip/vit/explore-losses.yaml
+# and referred to as `--jobs=task/clip/vit/explore-losses`
 
 # Shared section across jobs
 # $root is a special string that resolves to the root of the repo
@@ -12,7 +13,7 @@ shared:
     template: conda.sh # which template to use in `config/templates/` or path to a separate template file
     modules: anaconda/3 cuda/11.3 # string of the modules to load
     conda_env: gflownet # name of the environment
-    code_dir: $root # needed if you have multiple repos, eg for dev and production
+    code_dir: $SLURM_TMPDIR # needed if you have multiple repos, eg for dev and production
     gres: gpu:1 # slurm gres
     mem: 16G # node memory
     cpus_per_task: 2 # task cpus
