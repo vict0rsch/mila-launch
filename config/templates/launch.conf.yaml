@@ -1,0 +1,33 @@
+# Known variables:
+#  - $repoName: name of the folder containing `launch.py`
+#  - $root: path to the root of the repository ($root.name == $repoName)
+#  - All other $-starting strings will be assumed to be environment variables
+
+# Launcher configuration
+dry-run: false # if true, will not run the command, but will print the sbatch command
+force: false # if true, will run the command even if the repo is not clean
+prevent_unclean_repo: true # if true, will not run if the repo is not clean (untracked files, uncommitted changes, etc.)
+sbatch_files_root: $SCRATCH/mila-launch/$repoName/sbatch_files # where to store the sbatch files filled from the templates
+verbose: false # if true, will print the sbatch command
+warn_no_checkout: true # if true, will warn if `--checkout` is not passed to `launch.py`, even if it defaults to the current branch
+clone_as_https: true # if true, will clone the repo as https instead of ssh
+
+# Job configuration
+code_dir: "$SLURM_TMP_DIR" # path to the directory to run the command from. Use `'$SLURM_TMPDIR'` to run from a unique temporary directory for each job
+command: python # command to run
+conda_env: base # name of the conda environment to activate
+cpus_per_task: 1 # number of cpus per task
+git_checkout: "" # branch to checkout before running the command (or commit hash, or tag, etc.)
+gres: "" # gres to pass to slurm
+job_name: "mila-launch" # name of the job
+jobs: "" # path to a yaml file containing a list of jobs to run (either absolute, or relative to $root/config/jobs/)
+script_args: "" # arguments to pass to the script
+mem: 16G # memory to pass to slurm
+modules: "" # modules to load
+outdir: "$SCRATCH/$repoName/logs/slurm" # path to the directory to store the output of the command
+partition: "unkillable" # partition to pass to slurm
+script: main.py # script to run after command
+template: "conda.sh" # template to use (either absolute, or relative to $root/config/templates/)
+time: "" # SLURM time
+venv: "" # path to a virtual environment to activate (exclusive with `conda_env`)
+
