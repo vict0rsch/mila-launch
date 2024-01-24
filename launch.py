@@ -194,7 +194,7 @@ def now_str():
     Returns:
         str: current date and time
     """
-    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def load_jobs(yaml_path):
