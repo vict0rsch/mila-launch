@@ -26,7 +26,7 @@ mem: 16G # memory to pass to slurm
 modules: "" # modules to load
 outdir: "$SCRATCH/$repoName/logs/slurm" # path to the directory to store the output of the command
 partition: "unkillable" # partition to pass to slurm
-script_path: main.py # script to run after command
+script_path: launch_main_demo.py # script to run after command
 template: "conda.sh" # template to use (either absolute, or relative to $root/config/templates/)
 time: "" # SLURM time
 venv: "" # path to a virtual environment to activate (exclusive with `conda_env`)
